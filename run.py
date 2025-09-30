@@ -66,13 +66,7 @@ def main():
     
     mostrar_info()
     
-   
-    if modo == 'production':
-        # Configuración para producción
-        app.run(host='0.0.0.0', port=5000, debug=False)
-    else:
-        # Configuración para desarrollo
-        app.run(debug=True, port=5000)
+ 
 
 if __name__ == '__main__':
     try:
