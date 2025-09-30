@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Sistema de Facturación{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block breadcrumb %}
+<li class="breadcrumb-item active">Dashboard</li>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-3 col-6">
+        <div class="small-box bg-info">
+            <div class="inner">
+                <h3>{{ total_clientes }}</h3>
+                <p>Clientes</p>
+            </div>
+            <div class="icon">
+                <i class="fas fa-users"></i>
+            </div>
+            <a href="{{ url_for('clientes') }}" class="small-box-footer">
+                Ver más <i class="fas fa-arrow-circle-right"></i>
+            </a>
+        </div>
+    </div>
+
+    <div class="col-lg-3 col-6">
+        <div class="small-box bg-success">
+            <div class="inner">
+                <h3>{{ total_productos }}</h3>
+                <p>Productos</p>
+            </div>
+            <div class="icon">
+                <i class="fas fa-box"></i>
+            </div>
+            <a href="{{ url_for('productos') }}" class="small-box-footer">
+                Ver más <i class="fas fa-arrow-circle-right"></i>
+            </a>
+        </div>
+    </div>
+
+    <div class="col-lg-3 col-6">
+        <div class="small-box bg-warning">
+            <div class="inner">
+                <h3>{{ total_facturas }}</h3>
+                <p>Facturas</p>
+            </div>
+            <div class="icon">
+                <i class="fas fa-file-invoice"></i>
+            </div>
+            <a href="{{ url_for('facturas') }}" class="small-box-footer">
+                Ver más <i class="fas fa-arrow-circle-right"></i>
+            </a>
+        </div>
+    </div>
+
+    <div class="col-lg-3 col-6">
+        <div class="small-box bg-danger">
+            <div class="inner">
+                <h3>${{ "%.2f"|format(ventas_total) }}</h3>
+                <p>Ventas Totales</p>
+            </div>
+            <div class="icon">
+                <i class="fas fa-dollar-sign"></i>
+            </div>
+            <a href="{{ url_for('reporte_ventas') }}" class="small-box-footer">
+                Ver más <i class="fas fa-arrow-circle-right"></i>
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <i class="fas fa-chart-pie mr-1"></i>
+                    Accesos Rápidos
+                </h3>
+            </div>
+            <div class="card-body">
+                <div class="list-group">
+                    <a href="{{ url_for('nueva_factura') }}" class="list-group-item list-group-item-action">
+                        <i class="fas fa-plus-circle text-success"></i> Nueva Factura
+                    </a>
+                    <a href="{{ url_for('nuevo_cliente') }}" class="list-group-item list-group-item-action">
+                        <i class="fas fa-user-plus text-primary"></i> Nuevo Cliente
+                    </a>
+                    <a href="{{ url_for('nuevo_producto') }}" class="list-group-item list-group-item-action">
+                        <i class="fas fa-box text-warning"></i> Nuevo Producto
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <i class="fas fa-chart-bar mr-1"></i>
+                    Reportes
+                </h3>
+            </div>
+            <div class="card-body">
+                <div class="list-group">
+                    <a href="{{ url_for('reporte_clientes') }}" class="list-group-item list-group-item-action">
+                        <i class="fas fa-users text-info"></i> Ventas por Cliente
+                    </a>
+                    <a href="{{ url_for('reporte_ventas') }}" class="list-group-item list-group-item-action">
+                        <i class="fas fa-calendar-alt text-danger"></i> Ventas por Período
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
