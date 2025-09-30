@@ -1,25 +1,40 @@
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template, request, redirect, url_for, flash, session
 import sqlite3
 from datetime import datetime
 import json
+from functools import wraps
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'clave-secreta'
+app.config['SECRET_KEY'] = 'clave-secreta-cambiar-en-produccion'
 
 DATABASE = 'facturacion.db'
 
-#  FUNCIONES BASE DE DATOS =
 
 def get_db():
     """Conectar a la base de datos"""
     conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row  # Para acceder a columnas por nombre
+    conn.row_factory = sqlite3.Row
     return conn
+
+def hash_password(password):
+    """Hashear contraseña (simple para este ejemplo)"""
+    import hashlib
+    return hashlib.sha256(password.encode()).hexdigest()
 
 def init_db():
     """Crear las tablas si no existen"""
     conn = get_db()
     cursor = conn.cursor()
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS usuarios (
+            id_usuario INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            rol TEXT DEFAULT 'usuario'
+        )
+    ''')
     
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS clientes (
@@ -30,7 +45,6 @@ def init_db():
             email TEXT
         )
     ''')
-    
     
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS productos (
@@ -64,19 +78,67 @@ def init_db():
         )
     ''')
     
+    cursor.execute('SELECT COUNT(*) as total FROM usuarios')
+    if cursor.fetchone()['total'] == 0:
+        cursor.execute('''
+            INSERT INTO usuarios (nombre, email, password, rol)
+            VALUES (?, ?, ?, ?)
+        ''', ('Administrador', 'admin@sistema.com', hash_password('admin123'), 'administrador'))
+        print('✓ Usuario administrador creado: admin@sistema.com / admin123')
+    
     conn.commit()
     conn.close()
     print('✓ Base de datos inicializada correctamente')
 
-#  RUTAS 
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'usuario_id' not in session:
+            flash('Debe iniciar sesión para acceder.', 'warning')
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
 
 @app.route('/')
 def index():
-    return redirect(url_for('clientes'))
+    if 'usuario_id' in session:
+        return redirect(url_for('clientes'))
+    return redirect(url_for('login'))
 
-# GESTION DE CLIENTES
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM usuarios WHERE email=?', (email,))
+        usuario = cursor.fetchone()
+        conn.close()
+        
+        if usuario and usuario['password'] == hash_password(password):
+            session['usuario_id'] = usuario['id_usuario']
+            session['usuario_nombre'] = usuario['nombre']
+            session['usuario_rol'] = usuario['rol']
+            flash(f'Bienvenido, {usuario["nombre"]}!', 'success')
+            return redirect(url_for('clientes'))
+        else:
+            flash('Credenciales incorrectas.', 'danger')
+    
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    flash('Sesión cerrada exitosamente.', 'info')
+    return redirect(url_for('login'))
+
 
 @app.route('/clientes')
+@login_required
 def clientes():
     conn = get_db()
     cursor = conn.cursor()
@@ -86,6 +148,7 @@ def clientes():
     return render_template('clientes.html', clientes=clientes)
 
 @app.route('/clientes/nuevo', methods=['GET', 'POST'])
+@login_required
 def nuevo_cliente():
     if request.method == 'POST':
         nombre = request.form.get('nombre')
@@ -108,6 +171,7 @@ def nuevo_cliente():
     return render_template('cliente_form.html', cliente=None)
 
 @app.route('/clientes/editar/<int:id>', methods=['GET', 'POST'])
+@login_required
 def editar_cliente(id):
     conn = get_db()
     cursor = conn.cursor()
@@ -140,6 +204,7 @@ def editar_cliente(id):
     return render_template('cliente_form.html', cliente=cliente)
 
 @app.route('/clientes/eliminar/<int:id>')
+@login_required
 def eliminar_cliente(id):
     conn = get_db()
     cursor = conn.cursor()
@@ -150,9 +215,9 @@ def eliminar_cliente(id):
     flash('Cliente eliminado exitosamente.', 'success')
     return redirect(url_for('clientes'))
 
-#  GESTION DE PRODUCTOS 
 
 @app.route('/productos')
+@login_required
 def productos():
     conn = get_db()
     cursor = conn.cursor()
@@ -162,6 +227,7 @@ def productos():
     return render_template('productos.html', productos=productos)
 
 @app.route('/productos/nuevo', methods=['GET', 'POST'])
+@login_required
 def nuevo_producto():
     if request.method == 'POST':
         descripcion = request.form.get('descripcion')
@@ -183,6 +249,7 @@ def nuevo_producto():
     return render_template('producto_form.html', producto=None)
 
 @app.route('/productos/editar/<int:id>', methods=['GET', 'POST'])
+@login_required
 def editar_producto(id):
     conn = get_db()
     cursor = conn.cursor()
@@ -214,6 +281,7 @@ def editar_producto(id):
     return render_template('producto_form.html', producto=producto)
 
 @app.route('/productos/eliminar/<int:id>')
+@login_required
 def eliminar_producto(id):
     conn = get_db()
     cursor = conn.cursor()
@@ -224,9 +292,9 @@ def eliminar_producto(id):
     flash('Producto eliminado exitosamente.', 'success')
     return redirect(url_for('productos'))
 
-#  GESTION DE FACTURAS 
 
 @app.route('/facturas')
+@login_required
 def facturas():
     conn = get_db()
     cursor = conn.cursor()
@@ -241,6 +309,7 @@ def facturas():
     return render_template('facturas.html', facturas=facturas)
 
 @app.route('/facturas/nueva', methods=['GET', 'POST'])
+@login_required
 def nueva_factura():
     if request.method == 'POST':
         id_cliente = request.form.get('id_cliente')
@@ -271,12 +340,14 @@ def nueva_factura():
             precio_unitario = producto['precio']
             subtotal = cantidad * precio_unitario
             
+            
             cursor.execute('''
                 INSERT INTO detalle_factura 
                 (id_factura, id_producto, cantidad, precio_unitario, subtotal)
                 VALUES (?, ?, ?, ?, ?)
             ''', (id_factura, item['id_producto'], cantidad, precio_unitario, subtotal))
             
+            # A
             cursor.execute('''
                 UPDATE productos 
                 SET stock = stock - ?
@@ -308,6 +379,7 @@ def nueva_factura():
     return render_template('factura_form.html', clientes=clientes, productos=productos)
 
 @app.route('/facturas/ver/<int:id>')
+@login_required
 def ver_factura(id):
     conn = get_db()
     cursor = conn.cursor()
@@ -337,9 +409,9 @@ def ver_factura(id):
     
     return render_template('factura_detalle.html', factura=factura, detalles=detalles)
 
-#  REPORTES 
 
 @app.route('/reportes/clientes')
+@login_required
 def reporte_clientes():
     conn = get_db()
     cursor = conn.cursor()
@@ -362,6 +434,7 @@ def reporte_clientes():
     return render_template('reporte_clientes.html', datos=datos)
 
 @app.route('/reportes/ventas', methods=['GET', 'POST'])
+@login_required
 def reporte_ventas():
     facturas = []
     total = 0
@@ -394,7 +467,6 @@ def reporte_ventas():
     
     return render_template('reporte_ventas.html', facturas=facturas, total=total)
 
-# INICIALIZACIN 
 
 if __name__ == '__main__':
     init_db()
