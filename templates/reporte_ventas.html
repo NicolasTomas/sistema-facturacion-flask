@@ -3,11 +3,6 @@
 {% block title %}Reporte de Ventas{% endblock %}
 {% block page_title %}Ventas por Período{% endblock %}
 
-{% block breadcrumb %}
-<li class="breadcrumb-item">Reportes</li>
-<li class="breadcrumb-item active">Ventas por Período</li>
-{% endblock %}
-
 {% block content %}
 <div class="card">
     <div class="card-header">
@@ -47,11 +42,6 @@
 <div class="card">
     <div class="card-header">
         <h3 class="card-title">Resultados</h3>
-        <div class="card-tools">
-            <button class="btn btn-primary btn-sm" onclick="window.print()">
-                <i class="fas fa-print"></i> Imprimir
-            </button>
-        </div>
     </div>
     <div class="card-body">
         <table class="table table-bordered table-striped">
@@ -66,10 +56,10 @@
             <tbody>
                 {% for factura in facturas %}
                 <tr>
-                    <td>{{ factura.id_factura }}</td>
-                    <td>{{ factura.cliente.nombre }}</td>
-                    <td>{{ factura.fecha.strftime('%d/%m/%Y') }}</td>
-                    <td>${{ "%.2f"|format(factura.total) }}</td>
+                    <td>{{ factura['id_factura'] }}</td>
+                    <td>{{ factura['cliente_nombre'] }}</td>
+                    <td>{{ factura['fecha'] }}</td>
+                    <td>${{ "%.2f"|format(factura['total']) }}</td>
                 </tr>
                 {% endfor %}
             </tbody>

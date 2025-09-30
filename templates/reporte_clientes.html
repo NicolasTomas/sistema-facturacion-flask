@@ -3,20 +3,10 @@
 {% block title %}Reporte de Clientes{% endblock %}
 {% block page_title %}Ventas por Cliente{% endblock %}
 
-{% block breadcrumb %}
-<li class="breadcrumb-item">Reportes</li>
-<li class="breadcrumb-item active">Ventas por Cliente</li>
-{% endblock %}
-
 {% block content %}
 <div class="card">
     <div class="card-header">
         <h3 class="card-title">Resumen de Ventas por Cliente</h3>
-        <div class="card-tools">
-            <button class="btn btn-primary btn-sm" onclick="window.print()">
-                <i class="fas fa-print"></i> Imprimir
-            </button>
-        </div>
     </div>
     <div class="card-body">
         <table class="table table-bordered table-striped">
@@ -32,12 +22,12 @@
                 {% set total_general = 0 %}
                 {% for dato in datos %}
                 <tr>
-                    <td>{{ dato.cliente.nombre }}</td>
-                    <td>{{ dato.cliente.direccion }}</td>
-                    <td>{{ dato.total_facturas }}</td>
-                    <td>${{ "%.2f"|format(dato.total_ventas) }}</td>
+                    <td>{{ dato['nombre'] }}</td>
+                    <td>{{ dato['direccion'] }}</td>
+                    <td>{{ dato['total_facturas'] }}</td>
+                    <td>${{ "%.2f"|format(dato['total_ventas']) }}</td>
                 </tr>
-                {% set total_general = total_general + dato.total_ventas %}
+                {% set total_general = total_general + dato['total_ventas'] %}
                 {% else %}
                 <tr>
                     <td colspan="4" class="text-center">No hay datos para mostrar</td>

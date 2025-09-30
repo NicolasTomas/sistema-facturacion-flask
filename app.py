@@ -1,305 +1,367 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
-from flask_sqlalchemy import SQLAlchemy
-from werkzeug.security import generate_password_hash, check_password_hash
-from functools import wraps
+from flask import Flask, render_template, request, redirect, url_for, flash
+import sqlite3
 from datetime import datetime
-import os
+import json
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'tu-clave-secreta-aqui-cambiar-en-produccion'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///facturacion.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SECRET_KEY'] = 'clave-secreta'
 
-db = SQLAlchemy(app)
+DATABASE = 'facturacion.db'
 
+#  FUNCIONES BASE DE DATOS =
 
+def get_db():
+    """Conectar a la base de datos"""
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row  # Para acceder a columnas por nombre
+    return conn
 
-class Usuario(db.Model):
-    __tablename__ = 'usuarios'
-    id_usuario = db.Column(db.Integer, primary_key=True)
-    nombre = db.Column(db.String(100), nullable=False)
-    email = db.Column(db.String(100), unique=True, nullable=False)
-    password = db.Column(db.String(200), nullable=False)
-    rol = db.Column(db.String(20), default='usuario')
+def init_db():
+    """Crear las tablas si no existen"""
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS clientes (
+            id_cliente INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL,
+            direccion TEXT,
+            telefono TEXT,
+            email TEXT
+        )
+    ''')
+    
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS productos (
+            id_producto INTEGER PRIMARY KEY AUTOINCREMENT,
+            descripcion TEXT NOT NULL,
+            precio REAL NOT NULL,
+            stock INTEGER DEFAULT 0
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS facturas (
+            id_factura INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_cliente INTEGER NOT NULL,
+            fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            total REAL DEFAULT 0.0,
+            FOREIGN KEY (id_cliente) REFERENCES clientes(id_cliente)
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS detalle_factura (
+            id_detalle INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_factura INTEGER NOT NULL,
+            id_producto INTEGER NOT NULL,
+            cantidad INTEGER NOT NULL,
+            precio_unitario REAL NOT NULL,
+            subtotal REAL NOT NULL,
+            FOREIGN KEY (id_factura) REFERENCES facturas(id_factura),
+            FOREIGN KEY (id_producto) REFERENCES productos(id_producto)
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+    print('✓ Base de datos inicializada correctamente')
 
-class Cliente(db.Model):
-    __tablename__ = 'clientes'
-    id_cliente = db.Column(db.Integer, primary_key=True)
-    nombre = db.Column(db.String(100), nullable=False)
-    direccion = db.Column(db.String(200))
-    telefono = db.Column(db.String(20))
-    email = db.Column(db.String(100))
-    facturas = db.relationship('Factura', backref='cliente', lazy=True)
+#  RUTAS 
 
-class Producto(db.Model):
-    __tablename__ = 'productos'
-    id_producto = db.Column(db.Integer, primary_key=True)
-    descripcion = db.Column(db.String(200), nullable=False)
-    precio = db.Column(db.Float, nullable=False)
-    stock = db.Column(db.Integer, default=0)
-
-class Factura(db.Model):
-    __tablename__ = 'facturas'
-    id_factura = db.Column(db.Integer, primary_key=True)
-    id_cliente = db.Column(db.Integer, db.ForeignKey('clientes.id_cliente'), nullable=False)
-    fecha = db.Column(db.DateTime, default=datetime.utcnow)
-    total = db.Column(db.Float, default=0.0)
-    detalles = db.relationship('DetalleFactura', backref='factura', lazy=True, cascade='all, delete-orphan')
-
-class DetalleFactura(db.Model):
-    __tablename__ = 'detalle_factura'
-    id_detalle = db.Column(db.Integer, primary_key=True)
-    id_factura = db.Column(db.Integer, db.ForeignKey('facturas.id_factura'), nullable=False)
-    id_producto = db.Column(db.Integer, db.ForeignKey('productos.id_producto'), nullable=False)
-    cantidad = db.Column(db.Integer, nullable=False)
-    precio_unitario = db.Column(db.Float, nullable=False)
-    subtotal = db.Column(db.Float, nullable=False)
-    producto = db.relationship('Producto', backref='detalles')
-
-
-
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'usuario_id' not in session:
-            flash('Debe iniciar sesión para acceder.', 'warning')
-            return redirect(url_for('login'))
-        return f(*args, **kwargs)
-    return decorated_function
-
-def admin_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'usuario_id' not in session:
-            return redirect(url_for('login'))
-        usuario = Usuario.query.get(session['usuario_id'])
-        if usuario.rol != 'administrador':
-            flash('Acceso no autorizado.', 'danger')
-            return redirect(url_for('dashboard'))
-        return f(*args, **kwargs)
-    return decorated_function
-
-# RUTAS DE AUTENTICACON 
 @app.route('/')
 def index():
-    if 'usuario_id' in session:
-        return redirect(url_for('dashboard'))
-    return redirect(url_for('login'))
+    return redirect(url_for('clientes'))
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        email = request.form.get('email')
-        password = request.form.get('password')
-        
-        usuario = Usuario.query.filter_by(email=email).first()
-        
-        if usuario and check_password_hash(usuario.password, password):
-            session['usuario_id'] = usuario.id_usuario
-            session['usuario_nombre'] = usuario.nombre
-            session['usuario_rol'] = usuario.rol
-            flash(f'Bienvenido, {usuario.nombre}!', 'success')
-            return redirect(url_for('dashboard'))
-        else:
-            flash('Credenciales incorrectas.', 'danger')
-    
-    return render_template('login.html')
-
-@app.route('/logout')
-def logout():
-    session.clear()
-    flash('Sesión cerrada exitosamente.', 'info')
-    return redirect(url_for('login'))
-
-
-
-@app.route('/dashboard')
-@login_required
-def dashboard():
-    total_clientes = Cliente.query.count()
-    total_productos = Producto.query.count()
-    total_facturas = Factura.query.count()
-    ventas_total = db.session.query(db.func.sum(Factura.total)).scalar() or 0
-    
-    return render_template('dashboard.html',
-                         total_clientes=total_clientes,
-                         total_productos=total_productos,
-                         total_facturas=total_facturas,
-                         ventas_total=ventas_total)
-
-# GESTION  CLIENTES
+# GESTION DE CLIENTES
 
 @app.route('/clientes')
-@login_required
 def clientes():
-    clientes = Cliente.query.all()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM clientes ORDER BY nombre')
+    clientes = cursor.fetchall()
+    conn.close()
     return render_template('clientes.html', clientes=clientes)
 
 @app.route('/clientes/nuevo', methods=['GET', 'POST'])
-@login_required
 def nuevo_cliente():
     if request.method == 'POST':
-        cliente = Cliente(
-            nombre=request.form.get('nombre'),
-            direccion=request.form.get('direccion'),
-            telefono=request.form.get('telefono'),
-            email=request.form.get('email')
-        )
-        db.session.add(cliente)
-        db.session.commit()
+        nombre = request.form.get('nombre')
+        direccion = request.form.get('direccion')
+        telefono = request.form.get('telefono')
+        email = request.form.get('email')
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO clientes (nombre, direccion, telefono, email)
+            VALUES (?, ?, ?, ?)
+        ''', (nombre, direccion, telefono, email))
+        conn.commit()
+        conn.close()
+        
         flash('Cliente agregado exitosamente.', 'success')
         return redirect(url_for('clientes'))
     
     return render_template('cliente_form.html', cliente=None)
 
 @app.route('/clientes/editar/<int:id>', methods=['GET', 'POST'])
-@login_required
 def editar_cliente(id):
-    cliente = Cliente.query.get_or_404(id)
+    conn = get_db()
+    cursor = conn.cursor()
     
     if request.method == 'POST':
-        cliente.nombre = request.form.get('nombre')
-        cliente.direccion = request.form.get('direccion')
-        cliente.telefono = request.form.get('telefono')
-        cliente.email = request.form.get('email')
-        db.session.commit()
+        nombre = request.form.get('nombre')
+        direccion = request.form.get('direccion')
+        telefono = request.form.get('telefono')
+        email = request.form.get('email')
+        
+        cursor.execute('''
+            UPDATE clientes 
+            SET nombre=?, direccion=?, telefono=?, email=?
+            WHERE id_cliente=?
+        ''', (nombre, direccion, telefono, email, id))
+        conn.commit()
+        conn.close()
+        
         flash('Cliente actualizado exitosamente.', 'success')
+        return redirect(url_for('clientes'))
+    
+    cursor.execute('SELECT * FROM clientes WHERE id_cliente=?', (id,))
+    cliente = cursor.fetchone()
+    conn.close()
+    
+    if not cliente:
+        flash('Cliente no encontrado.', 'danger')
         return redirect(url_for('clientes'))
     
     return render_template('cliente_form.html', cliente=cliente)
 
 @app.route('/clientes/eliminar/<int:id>')
-@login_required
 def eliminar_cliente(id):
-    cliente = Cliente.query.get_or_404(id)
-    db.session.delete(cliente)
-    db.session.commit()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM clientes WHERE id_cliente=?', (id,))
+    conn.commit()
+    conn.close()
+    
     flash('Cliente eliminado exitosamente.', 'success')
     return redirect(url_for('clientes'))
 
-# GESTION PRODUCTOS 
+#  GESTION DE PRODUCTOS 
 
 @app.route('/productos')
-@login_required
 def productos():
-    productos = Producto.query.all()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM productos ORDER BY descripcion')
+    productos = cursor.fetchall()
+    conn.close()
     return render_template('productos.html', productos=productos)
 
 @app.route('/productos/nuevo', methods=['GET', 'POST'])
-@login_required
 def nuevo_producto():
     if request.method == 'POST':
-        producto = Producto(
-            descripcion=request.form.get('descripcion'),
-            precio=float(request.form.get('precio')),
-            stock=int(request.form.get('stock'))
-        )
-        db.session.add(producto)
-        db.session.commit()
+        descripcion = request.form.get('descripcion')
+        precio = float(request.form.get('precio'))
+        stock = int(request.form.get('stock'))
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO productos (descripcion, precio, stock)
+            VALUES (?, ?, ?)
+        ''', (descripcion, precio, stock))
+        conn.commit()
+        conn.close()
+        
         flash('Producto agregado exitosamente.', 'success')
         return redirect(url_for('productos'))
     
     return render_template('producto_form.html', producto=None)
 
 @app.route('/productos/editar/<int:id>', methods=['GET', 'POST'])
-@login_required
 def editar_producto(id):
-    producto = Producto.query.get_or_404(id)
+    conn = get_db()
+    cursor = conn.cursor()
     
     if request.method == 'POST':
-        producto.descripcion = request.form.get('descripcion')
-        producto.precio = float(request.form.get('precio'))
-        producto.stock = int(request.form.get('stock'))
-        db.session.commit()
+        descripcion = request.form.get('descripcion')
+        precio = float(request.form.get('precio'))
+        stock = int(request.form.get('stock'))
+        
+        cursor.execute('''
+            UPDATE productos 
+            SET descripcion=?, precio=?, stock=?
+            WHERE id_producto=?
+        ''', (descripcion, precio, stock, id))
+        conn.commit()
+        conn.close()
+        
         flash('Producto actualizado exitosamente.', 'success')
+        return redirect(url_for('productos'))
+    
+    cursor.execute('SELECT * FROM productos WHERE id_producto=?', (id,))
+    producto = cursor.fetchone()
+    conn.close()
+    
+    if not producto:
+        flash('Producto no encontrado.', 'danger')
         return redirect(url_for('productos'))
     
     return render_template('producto_form.html', producto=producto)
 
 @app.route('/productos/eliminar/<int:id>')
-@login_required
 def eliminar_producto(id):
-    producto = Producto.query.get_or_404(id)
-    db.session.delete(producto)
-    db.session.commit()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM productos WHERE id_producto=?', (id,))
+    conn.commit()
+    conn.close()
+    
     flash('Producto eliminado exitosamente.', 'success')
     return redirect(url_for('productos'))
 
-#  GESTION FACTURAS 
+#  GESTION DE FACTURAS 
 
 @app.route('/facturas')
-@login_required
 def facturas():
-    facturas = Factura.query.order_by(Factura.fecha.desc()).all()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT f.*, c.nombre as cliente_nombre
+        FROM facturas f
+        JOIN clientes c ON f.id_cliente = c.id_cliente
+        ORDER BY f.fecha DESC
+    ''')
+    facturas = cursor.fetchall()
+    conn.close()
     return render_template('facturas.html', facturas=facturas)
 
 @app.route('/facturas/nueva', methods=['GET', 'POST'])
-@login_required
 def nueva_factura():
     if request.method == 'POST':
         id_cliente = request.form.get('id_cliente')
         productos_json = request.form.get('productos')
         
-        import json
+        if not productos_json:
+            flash('Debe agregar al menos un producto.', 'danger')
+            return redirect(url_for('nueva_factura'))
+        
         productos_data = json.loads(productos_json)
         
-        factura = Factura(id_cliente=id_cliente)
-        db.session.add(factura)
-        db.session.flush()
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO facturas (id_cliente, total)
+            VALUES (?, 0)
+        ''', (id_cliente,))
+        id_factura = cursor.lastrowid
         
         total = 0
         for item in productos_data:
-            producto = Producto.query.get(item['id_producto'])
+            cursor.execute('SELECT precio, stock FROM productos WHERE id_producto=?', 
+                         (item['id_producto'],))
+            producto = cursor.fetchone()
+            
             cantidad = int(item['cantidad'])
-            subtotal = producto.precio * cantidad
+            precio_unitario = producto['precio']
+            subtotal = cantidad * precio_unitario
             
-            detalle = DetalleFactura(
-                id_factura=factura.id_factura,
-                id_producto=producto.id_producto,
-                cantidad=cantidad,
-                precio_unitario=producto.precio,
-                subtotal=subtotal
-            )
-            db.session.add(detalle)
+            cursor.execute('''
+                INSERT INTO detalle_factura 
+                (id_factura, id_producto, cantidad, precio_unitario, subtotal)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (id_factura, item['id_producto'], cantidad, precio_unitario, subtotal))
             
-            producto.stock -= cantidad
+            cursor.execute('''
+                UPDATE productos 
+                SET stock = stock - ?
+                WHERE id_producto = ?
+            ''', (cantidad, item['id_producto']))
+            
             total += subtotal
         
-        factura.total = total
-        db.session.commit()
+        cursor.execute('UPDATE facturas SET total=? WHERE id_factura=?', 
+                      (total, id_factura))
+        
+        conn.commit()
+        conn.close()
         
         flash('Factura creada exitosamente.', 'success')
-        return redirect(url_for('ver_factura', id=factura.id_factura))
+        return redirect(url_for('ver_factura', id=id_factura))
     
-    clientes = Cliente.query.all()
-    productos = Producto.query.filter(Producto.stock > 0).all()
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM clientes ORDER BY nombre')
+    clientes = cursor.fetchall()
+    
+    cursor.execute('SELECT * FROM productos WHERE stock > 0 ORDER BY descripcion')
+    productos = cursor.fetchall()
+    
+    conn.close()
+    
     return render_template('factura_form.html', clientes=clientes, productos=productos)
 
 @app.route('/facturas/ver/<int:id>')
-@login_required
 def ver_factura(id):
-    factura = Factura.query.get_or_404(id)
-    return render_template('factura_detalle.html', factura=factura)
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT f.*, c.nombre, c.direccion, c.telefono, c.email
+        FROM facturas f
+        JOIN clientes c ON f.id_cliente = c.id_cliente
+        WHERE f.id_factura = ?
+    ''', (id,))
+    factura = cursor.fetchone()
+    
+    if not factura:
+        flash('Factura no encontrada.', 'danger')
+        conn.close()
+        return redirect(url_for('facturas'))
+    
+    cursor.execute('''
+        SELECT d.*, p.descripcion
+        FROM detalle_factura d
+        JOIN productos p ON d.id_producto = p.id_producto
+        WHERE d.id_factura = ?
+    ''', (id,))
+    detalles = cursor.fetchall()
+    
+    conn.close()
+    
+    return render_template('factura_detalle.html', factura=factura, detalles=detalles)
 
-#  REPORTES
+#  REPORTES 
 
 @app.route('/reportes/clientes')
-@login_required
 def reporte_clientes():
-    clientes = Cliente.query.all()
-    datos = []
-    for cliente in clientes:
-        total_facturas = len(cliente.facturas)
-        total_ventas = sum(f.total for f in cliente.facturas)
-        datos.append({
-            'cliente': cliente,
-            'total_facturas': total_facturas,
-            'total_ventas': total_ventas
-        })
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT 
+            c.id_cliente,
+            c.nombre,
+            c.direccion,
+            COUNT(f.id_factura) as total_facturas,
+            COALESCE(SUM(f.total), 0) as total_ventas
+        FROM clientes c
+        LEFT JOIN facturas f ON c.id_cliente = f.id_cliente
+        GROUP BY c.id_cliente, c.nombre, c.direccion
+        ORDER BY total_ventas DESC
+    ''')
+    datos = cursor.fetchall()
+    conn.close()
+    
     return render_template('reporte_clientes.html', datos=datos)
 
 @app.route('/reportes/ventas', methods=['GET', 'POST'])
-@login_required
 def reporte_ventas():
     facturas = []
     total = 0
@@ -309,30 +371,31 @@ def reporte_ventas():
         fecha_fin = request.form.get('fecha_fin')
         
         if fecha_inicio and fecha_fin:
-            facturas = Factura.query.filter(
-                Factura.fecha.between(fecha_inicio, fecha_fin)
-            ).all()
-            total = sum(f.total for f in facturas)
+            conn = get_db()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT f.*, c.nombre as cliente_nombre
+                FROM facturas f
+                JOIN clientes c ON f.id_cliente = c.id_cliente
+                WHERE DATE(f.fecha) BETWEEN ? AND ?
+                ORDER BY f.fecha DESC
+            ''', (fecha_inicio, fecha_fin))
+            facturas = cursor.fetchall()
+            
+            cursor.execute('''
+                SELECT COALESCE(SUM(total), 0)
+                FROM facturas
+                WHERE DATE(fecha) BETWEEN ? AND ?
+            ''', (fecha_inicio, fecha_fin))
+            total = cursor.fetchone()[0]
+            
+            conn.close()
     
     return render_template('reporte_ventas.html', facturas=facturas, total=total)
 
-#  INICIALIZACION 
-
-def inicializar_db():
-    with app.app_context():
-        db.create_all()
-        
-        if Usuario.query.count() == 0:
-            admin = Usuario(
-                nombre='Administrador',
-                email='admin@sistema.com',
-                password=generate_password_hash('admin123'),
-                rol='administrador'
-            )
-            db.session.add(admin)
-            db.session.commit()
-            print('Usuario administrador creado: admin@sistema.com / admin123')
+# INICIALIZACIN 
 
 if __name__ == '__main__':
-    inicializar_db()
+    init_db()
     app.run(debug=True)

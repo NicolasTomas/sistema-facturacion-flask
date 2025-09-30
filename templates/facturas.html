@@ -3,10 +3,6 @@
 {% block title %}Facturas{% endblock %}
 {% block page_title %}Gestión de Facturas{% endblock %}
 
-{% block breadcrumb %}
-<li class="breadcrumb-item active">Facturas</li>
-{% endblock %}
-
 {% block content %}
 <div class="card">
     <div class="card-header">
@@ -31,12 +27,12 @@
             <tbody>
                 {% for factura in facturas %}
                 <tr>
-                    <td>{{ factura.id_factura }}</td>
-                    <td>{{ factura.cliente.nombre }}</td>
-                    <td>{{ factura.fecha.strftime('%d/%m/%Y %H:%M') }}</td>
-                    <td>${{ "%.2f"|format(factura.total) }}</td>
+                    <td>{{ factura['id_factura'] }}</td>
+                    <td>{{ factura['cliente_nombre'] }}</td>
+                    <td>{{ factura['fecha'] }}</td>
+                    <td>${{ "%.2f"|format(factura['total']) }}</td>
                     <td>
-                        <a href="{{ url_for('ver_factura', id=factura.id_factura) }}" 
+                        <a href="{{ url_for('ver_factura', id=factura['id_factura']) }}" 
                            class="btn btn-info btn-sm">
                             <i class="fas fa-eye"></i> Ver
                         </a>
